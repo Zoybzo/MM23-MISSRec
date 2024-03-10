@@ -1,6 +1,6 @@
 import os
 import torch
-from transformers import AutoModel, AutoTokenizer
+from transformers import AutoModel, AutoTokenizer, CLIPTextModel
 
 
 def check_path(path):
@@ -19,7 +19,7 @@ def set_device(gpu_id):
 
 def load_plm(model_name="bert-base-uncased"):
     tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = AutoModel.from_pretrained(model_name)
+    model = CLIPTextModel.from_pretrained(model_name)
     return tokenizer, model
 
 

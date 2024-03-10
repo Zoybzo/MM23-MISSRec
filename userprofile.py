@@ -1,45 +1,50 @@
 import argparse
-from logging import getLogger
+from logging import getLogger, FileHandler
 import torch
-import torch.multiprocessing as mp
-import torch.distributed as dist
 from recbole.config import Config
 from recbole.data import data_preparation
 from recbole.utils import init_seed, init_logger, set_color
 
 from missrec import MISSRec
 from data.dataset import MISSRecDataset
-from trainer import DDPMISSRecTrainer
-import os
+from collections import OrderedDict
+from trainer import MISSRecTrainer
 
 
-def finetune(
-    rank,
-    world_size,
+def get_logger_filename(logger):
+    file_handler = next(
+        (handler for handler in logger.handlers if isinstance(handler, FileHandler)),
+        None,
+    )
+    if file_handler:
+        filename = file_handler.baseFilename
+        print(f"The log file name is {filename}")
+    else:
+        raise Exception("No file handler found in logger")
+    return filename
+
+
+def userprofile(
     dataset,
     pretrained_file,
-    mode="transductive",
+    props="props/MISSRec.yaml,props/userprofile.yaml",
+    mode="inductive",
     fix_enc=True,
-    fix_plm=False,
-    fix_adaptor=False,
+    log_prefix="",
     **kwargs,
 ):
     # configurations initialization
-    props = ["props/MISSRec.yaml", "props/finetune.yaml"]
-    if rank == 0:
-        print("DDP finetune on:", dataset)
-        print(props)
+    props = props.split(",")
+    print(props)
 
     # configurations initialization
-    print("world size", world_size, torch.cuda.device_count())
-    kwargs.update({"ddp": True, "rank": rank, "world_size": world_size})
     config = Config(
         model=MISSRec, dataset=dataset, config_file_list=props, config_dict=kwargs
     )
+    config["log_prefix"] = log_prefix
+
     init_seed(config["seed"], config["reproducibility"])
     # logger initialization
-    if config["rank"] not in [-1, 0]:
-        config["state"] = "warning"
     init_logger(config)
     logger = getLogger()
     if config["train_stage"] != mode + "_ft":  # modify the training mode
@@ -57,53 +62,56 @@ def finetune(
     train_data, valid_data, test_data = data_preparation(config, dataset)
 
     # model loading and initialization
-    model = MISSRec(config, train_data.dataset)
-    # count trainable parameters
-    if rank == 0:
-        trainable_params = []
-        for name, param in model.named_parameters():
-            if param.requires_grad:
-                trainable_params.append(name)
-        logger.log(level=20, msg=f"Trainable parameters: {trainable_params}")
+    model = MISSRec(config, train_data.dataset).to(config["device"])
 
     # Load pre-trained model
     if pretrained_file != "":
-        checkpoint = torch.load(pretrained_file, map_location=torch.device("cpu"))
+        checkpoint = torch.load(pretrained_file)
         logger.info(f"Loading from {pretrained_file}")
         logger.info(f'Transfer [{checkpoint["config"]["dataset"]}] -> [{dataset}]')
-        model.load_state_dict(checkpoint["state_dict"], strict=False)
+        # adaption for text moe adapter
+        new_state_dict = OrderedDict()
+        for name, val in checkpoint["state_dict"].items():
+            if name.startswith("moe_adaptor"):
+                new_state_dict[name.replace("moe_adaptor", "text_moe_adaptor")] = val
+            else:
+                new_state_dict[name] = val
+        model.load_state_dict(new_state_dict, strict=False)
         if fix_enc:
             logger.info(f"Fix encoder parameters.")
             for _ in model.position_embedding.parameters():
                 _.requires_grad = False
-            for _ in model.trm_encoder.parameters():
+            for _ in model.trm_model.parameters():
                 _.requires_grad = False
-        if fix_plm:
-            logger.info("Fix pre-trained language model.")
-            for _ in model.plm_model.parameters():
-                _.requires_grad = False
-        if fix_adaptor:
-            logger.info("Fix adapter module.")
-            for _ in model.moe_adaptor.parameters():
+        if hasattr(model, "mm_fusion"):
+            for _ in model.mm_fusion.parameters():
                 _.requires_grad = False
     logger.info(model)
 
+    # count trainable parameters
+    trainable_params = []
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            trainable_params.append(name)
+    logger.log(level=20, msg=f"Trainable parameters: {trainable_params}")
+
     # trainer loading and initialization
-    trainer = DDPMISSRecTrainer(config, model)
+    trainer = MISSRecTrainer(config, model)
     # model training
     best_valid_score, best_valid_result = trainer.fit(
-        train_data, valid_data, saved=True, show_progress=(rank == 0)
+        train_data, valid_data, saved=True, show_progress=config["show_progress"]
     )
 
     # model evaluation
     test_result = trainer.evaluate(
-        test_data, load_best_model=True, show_progress=(rank == 0)
+        test_data, load_best_model=True, show_progress=config["show_progress"]
     )
 
     logger.info(set_color("best valid ", "yellow") + f": {best_valid_result}")
     logger.info(set_color("test result", "yellow") + f": {test_result}")
 
-    dist.destroy_process_group()
+    logger_Filename = get_logger_filename(logger)
+    logger.info(f"Write log to {logger_Filename}")
 
     return (
         config["model"],
@@ -124,31 +132,21 @@ if __name__ == "__main__":
     )
     parser.add_argument("-p", type=str, default="", help="pre-trained model path")
     parser.add_argument("-f", type=bool, default=True)
-    parser.add_argument("-port", type=str, default="12355", help="port for ddp")
-    parser.add_argument("--fix_plm", action="store_true")
-    parser.add_argument("--fix_adaptor", action="store_true")
     parser.add_argument(
-        "-mode", type=str, default="transductive"
+        "-props", type=str, default="props/MISSRec.yaml,props/userprofile.yaml"
+    )
+    parser.add_argument(
+        "-mode", type=str, default="inductive"
     )  # transductive (w/ ID) / inductive (w/o ID)
+    parser.add_argument("-note", type=str, default="")
     args, unparsed = parser.parse_known_args()
+    print(args)
 
-    n_gpus = torch.cuda.device_count()
-    world_size = n_gpus
-
-    os.environ["MASTER_ADDR"] = "localhost"
-    os.environ["MASTER_PORT"] = args.port
-
-    mp.spawn(
-        finetune,
-        args=(
-            world_size,
-            args.d,
-            args.p,
-            args.mode,
-            args.f,
-            args.fix_plm,
-            args.fix_adaptor,
-        ),
-        nprocs=world_size,
-        join=True,
+    userprofile(
+        args.d,
+        props=args.props,
+        mode=args.mode,
+        pretrained_file=args.p,
+        fix_enc=args.f,
+        log_prefix=args.note,
     )

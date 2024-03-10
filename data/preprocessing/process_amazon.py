@@ -322,7 +322,7 @@ def generate_item_embedding(
         encoded_sentences = tokenizer(
             sentences,
             padding=True,
-            max_length=512,
+            max_length=77,
             truncation=True,
             return_tensors="pt",
         ).to(args.device)
@@ -358,7 +358,7 @@ def generate_item_embedding(
         suffix = "1"
 
     file = os.path.join(
-        args.output_path, args.dataset, args.dataset + ".feat" + suffix + args.emb_type
+        args.output_path, args.dataset + ".feat" + suffix + args.emb_type
     )
     embeddings.tofile(file)
 

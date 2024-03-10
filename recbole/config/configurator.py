@@ -19,13 +19,25 @@ import yaml
 import torch
 from logging import getLogger
 
+from loguru import logger as loguru_logger
+
 from recbole.evaluator import metric_types, smaller_metrics
-from recbole.utils import get_model, Enum, EvaluatorType, ModelType, InputType, \
-    general_arguments, training_arguments, evaluation_arguments, dataset_arguments, set_color
+from recbole.utils import (
+    get_model,
+    Enum,
+    EvaluatorType,
+    ModelType,
+    InputType,
+    general_arguments,
+    training_arguments,
+    evaluation_arguments,
+    dataset_arguments,
+    set_color,
+)
 
 
 class Config(object):
-    """ Configurator module that load the defined parameters.
+    """Configurator module that load the defined parameters.
 
     Configurator module will first load the default parameters from the fixed properties in RecBole and then
     load parameters from the external input.
@@ -55,7 +67,9 @@ class Config(object):
     Finally the learning_rate is equal to 0.02.
     """
 
-    def __init__(self, model=None, dataset=None, config_file_list=None, config_dict=None):
+    def __init__(
+        self, model=None, dataset=None, config_file_list=None, config_dict=None
+    ):
         """
         Args:
             model (str/AbstractRecommender): the model name or the model class, default is None, if it is None, config
@@ -65,15 +79,21 @@ class Config(object):
             config_file_list (list of str): the external config file, it allows multiple config files, default is None.
             config_dict (dict): the external parameter dictionaries, default is None.
         """
-        self._init_parameters_category()
-        self.yaml_loader = self._build_yaml_loader()
+        # Load the parameters from the fixed properties in RecBole.
+        self._init_parameters_category() # self.parameters: {'General': [], 'Training': [], 'Evaluation': [], 'Dataset': []}
+        self.yaml_loader = self._build_yaml_loader() # Used to load the yaml file.
+        # Load the parameters from the external input.
         self.file_config_dict = self._load_config_files(config_file_list)
         self.variable_config_dict = self._load_variable_config_dict(config_dict)
         self.cmd_config_dict = self._load_cmd_line()
-        self._merge_external_config_dict()
+        # Merge the parameters from the external input.
+        self._merge_external_config_dict() # self.external_config_dict: the merged parameters from the external input.
 
-        self.model, self.model_class, self.dataset = self._get_model_and_dataset(model, dataset)
-        self._load_internal_config_dict(self.model, self.model_class, self.dataset)
+        self.model, self.model_class, self.dataset = self._get_model_and_dataset(
+            model, dataset
+        ) # model_name, model_class, dataset_name
+        self._load_internal_config_dict(self.model, self.model_class, self.dataset) # Load the internal config from the properties in RecBole.
+        # Merge the internal config and the external config.
         self.final_config_dict = self._get_final_config_dict()
         self._set_default_parameters()
         self._init_device()
@@ -82,38 +102,40 @@ class Config(object):
 
     def _init_parameters_category(self):
         self.parameters = dict()
-        self.parameters['General'] = general_arguments
-        self.parameters['Training'] = training_arguments
-        self.parameters['Evaluation'] = evaluation_arguments
-        self.parameters['Dataset'] = dataset_arguments
+        self.parameters["General"] = general_arguments
+        self.parameters["Training"] = training_arguments
+        self.parameters["Evaluation"] = evaluation_arguments
+        self.parameters["Dataset"] = dataset_arguments
 
     def _build_yaml_loader(self):
         loader = yaml.FullLoader
         loader.add_implicit_resolver(
-            u'tag:yaml.org,2002:float',
+            "tag:yaml.org,2002:float",
             re.compile(
-                u'''^(?:
+                """^(?:
              [-+]?(?:[0-9][0-9_]*)\\.[0-9_]*(?:[eE][-+]?[0-9]+)?
             |[-+]?(?:[0-9][0-9_]*)(?:[eE][-+]?[0-9]+)
             |\\.[0-9_]+(?:[eE][-+][0-9]+)?
             |[-+]?[0-9][0-9_]*(?::[0-5]?[0-9])+\\.[0-9_]*
             |[-+]?\\.(?:inf|Inf|INF)
-            |\\.(?:nan|NaN|NAN))$''', re.X
-            ), list(u'-+0123456789.')
+            |\\.(?:nan|NaN|NAN))$""",
+                re.X,
+            ),
+            list("-+0123456789."),
         )
         return loader
 
     def _convert_config_dict(self, config_dict):
-        r"""This function convert the str parameters to their original type.
-
-        """
+        r"""This function convert the str parameters to their original type."""
         for key in config_dict:
             param = config_dict[key]
             if not isinstance(param, str):
                 continue
             try:
                 value = eval(param)
-                if value is not None and not isinstance(value, (str, int, float, list, tuple, dict, bool, Enum)):
+                if value is not None and not isinstance(
+                    value, (str, int, float, list, tuple, dict, bool, Enum)
+                ):
                     value = param
             except (NameError, SyntaxError, TypeError):
                 if isinstance(param, str):
@@ -129,11 +151,17 @@ class Config(object):
         return config_dict
 
     def _load_config_files(self, file_list):
+        """
+        Use yaml_loader to load the config files.
+        Return a dict that contains all the parameters in the config files.
+        """
         file_config_dict = dict()
         if file_list:
             for file in file_list:
-                with open(file, 'r', encoding='utf-8') as f:
-                    file_config_dict.update(yaml.load(f.read(), Loader=self.yaml_loader))
+                with open(file, "r", encoding="utf-8") as f:
+                    file_config_dict.update(
+                        yaml.load(f.read(), Loader=self.yaml_loader)
+                    )
         return file_config_dict
 
     def _load_variable_config_dict(self, config_dict):
@@ -143,9 +171,7 @@ class Config(object):
         return self._convert_config_dict(config_dict) if config_dict else dict()
 
     def _load_cmd_line(self):
-        r""" Read parameters from command line and convert it to str.
-
-        """
+        r"""Read parameters from command line and convert it to str."""
         cmd_config_dict = dict()
         unrecognized_args = []
         if "ipykernel_launcher" not in sys.argv[0]:
@@ -154,18 +180,29 @@ class Config(object):
                     unrecognized_args.append(arg)
                     continue
                 cmd_arg_name, cmd_arg_value = arg[2:].split("=")
-                if cmd_arg_name in cmd_config_dict and cmd_arg_value != cmd_config_dict[cmd_arg_name]:
-                    raise SyntaxError("There are duplicate commend arg '%s' with different value." % arg)
+                if (
+                    cmd_arg_name in cmd_config_dict
+                    and cmd_arg_value != cmd_config_dict[cmd_arg_name]
+                ):
+                    raise SyntaxError(
+                        "There are duplicate commend arg '%s' with different value."
+                        % arg
+                    )
                 else:
                     cmd_config_dict[cmd_arg_name] = cmd_arg_value
         if len(unrecognized_args) > 0:
             logger = getLogger()
-            logger.warning('command line args [{}] will not be used in RecBole'.format(' '.join(unrecognized_args)))
+            logger.warning(
+                "command line args [{}] will not be used in RecBole".format(
+                    " ".join(unrecognized_args)
+                )
+            )
         cmd_config_dict = self._convert_config_dict(cmd_config_dict)
         return cmd_config_dict
 
     def _merge_external_config_dict(self):
         external_config_dict = dict()
+        # The priority order is as following: command line > parameter dictionaries > config file
         external_config_dict.update(self.file_config_dict)
         external_config_dict.update(self.variable_config_dict)
         external_config_dict.update(self.cmd_config_dict)
@@ -174,86 +211,130 @@ class Config(object):
     def _get_model_and_dataset(self, model, dataset):
 
         if model is None:
+            # model need to be specified in at least one of the these ways: [model variable, config file, config dict, command line]
             try:
-                model = self.external_config_dict['model']
+                model = self.external_config_dict["model"]
             except KeyError:
                 raise KeyError(
-                    'model need to be specified in at least one of the these ways: '
-                    '[model variable, config file, config dict, command line] '
+                    "model need to be specified in at least one of the these ways: "
+                    "[model variable, config file, config dict, command line] "
                 )
         if not isinstance(model, str):
             final_model_class = model
             final_model = model.__name__
         else:
-            final_model = model
-            final_model_class = get_model(final_model)
+            final_model = model # model name
+            final_model_class = get_model(final_model) # Search the existing model class in RecBole
 
         if dataset is None:
             try:
-                final_dataset = self.external_config_dict['dataset']
+                final_dataset = self.external_config_dict["dataset"]
             except KeyError:
                 raise KeyError(
-                    'dataset need to be specified in at least one of the these ways: '
-                    '[dataset variable, config file, config dict, command line] '
+                    "dataset need to be specified in at least one of the these ways: "
+                    "[dataset variable, config file, config dict, command line] "
                 )
         else:
-            final_dataset = dataset
+            final_dataset = dataset # str
 
         return final_model, final_model_class, final_dataset
 
     def _update_internal_config_dict(self, file):
-        with open(file, 'r', encoding='utf-8') as f:
+        with open(file, "r", encoding="utf-8") as f:
             config_dict = yaml.load(f.read(), Loader=self.yaml_loader)
             if config_dict is not None:
                 self.internal_config_dict.update(config_dict)
         return config_dict
 
     def _load_internal_config_dict(self, model, model_class, dataset):
+        """
+        Load the internal config from the properties in RecBole.
+        And update the config according to the model type.
+        """
+        # Get the current path
         current_path = os.path.dirname(os.path.realpath(__file__))
-        overall_init_file = os.path.join(current_path, '../properties/overall.yaml')
-        model_init_file = os.path.join(current_path, '../properties/model/' + model + '.yaml')
-        sample_init_file = os.path.join(current_path, '../properties/dataset/sample.yaml')
-        dataset_init_file = os.path.join(current_path, '../properties/dataset/' + dataset + '.yaml')
+        # Load the yaml files from props in RecBole
+        overall_init_file = os.path.join(current_path, "../properties/overall.yaml")
+        model_init_file = os.path.join(
+            current_path, "../properties/model/" + model + ".yaml"
+        )
+        sample_init_file = os.path.join(
+            current_path, "../properties/dataset/sample.yaml"
+        )
+        dataset_init_file = os.path.join(
+            current_path, "../properties/dataset/" + dataset + ".yaml"
+        )
 
-        quick_start_config_path = os.path.join(current_path, '../properties/quick_start_config/')
-        context_aware_init = os.path.join(quick_start_config_path, 'context-aware.yaml')
-        context_aware_on_ml_100k_init = os.path.join(quick_start_config_path, 'context-aware_ml-100k.yaml')
-        DIN_init = os.path.join(quick_start_config_path, 'sequential_DIN.yaml')
-        DIN_on_ml_100k_init = os.path.join(quick_start_config_path, 'sequential_DIN_on_ml-100k.yaml')
-        sequential_init = os.path.join(quick_start_config_path, 'sequential.yaml')
-        special_sequential_on_ml_100k_init = os.path.join(quick_start_config_path, 'special_sequential_on_ml-100k.yaml')
-        sequential_embedding_model_init = os.path.join(quick_start_config_path, 'sequential_embedding_model.yaml')
-        knowledge_base_init = os.path.join(quick_start_config_path, 'knowledge_base.yaml')
+        quick_start_config_path = os.path.join(
+            current_path, "../properties/quick_start_config/"
+        )
+        context_aware_init = os.path.join(quick_start_config_path, "context-aware.yaml")
+        context_aware_on_ml_100k_init = os.path.join(
+            quick_start_config_path, "context-aware_ml-100k.yaml"
+        )
+        DIN_init = os.path.join(quick_start_config_path, "sequential_DIN.yaml")
+        DIN_on_ml_100k_init = os.path.join(
+            quick_start_config_path, "sequential_DIN_on_ml-100k.yaml"
+        )
+        sequential_init = os.path.join(quick_start_config_path, "sequential.yaml")
+        special_sequential_on_ml_100k_init = os.path.join(
+            quick_start_config_path, "special_sequential_on_ml-100k.yaml"
+        )
+        sequential_embedding_model_init = os.path.join(
+            quick_start_config_path, "sequential_embedding_model.yaml"
+        )
+        knowledge_base_init = os.path.join(
+            quick_start_config_path, "knowledge_base.yaml"
+        )
 
         self.internal_config_dict = dict()
-        for file in [overall_init_file, model_init_file, sample_init_file, dataset_init_file]:
-            if os.path.isfile(file):
+        for file in [
+            overall_init_file,
+            model_init_file,
+            sample_init_file,
+            dataset_init_file,
+        ]:
+            if os.path.isfile(file): # If the file exists
                 config_dict = self._update_internal_config_dict(file)
                 if file == dataset_init_file:
-                    self.parameters['Dataset'] += [
-                        key for key in config_dict.keys() if key not in self.parameters['Dataset']
+                    self.parameters["Dataset"] += [
+                        key
+                        for key in config_dict.keys()
+                        if key not in self.parameters["Dataset"]
                     ]
 
-        self.internal_config_dict['MODEL_TYPE'] = model_class.type
-        if self.internal_config_dict['MODEL_TYPE'] == ModelType.GENERAL:
+        self.internal_config_dict["MODEL_TYPE"] = model_class.type
+        # Update the config according to the model type
+        if self.internal_config_dict["MODEL_TYPE"] == ModelType.GENERAL:
             pass
-        elif self.internal_config_dict['MODEL_TYPE'] in {ModelType.CONTEXT, ModelType.DECISIONTREE}:
+        elif self.internal_config_dict["MODEL_TYPE"] in {
+            ModelType.CONTEXT,
+            ModelType.DECISIONTREE,
+        }:
             self._update_internal_config_dict(context_aware_init)
-            if dataset == 'ml-100k':
+            if dataset == "ml-100k":
                 self._update_internal_config_dict(context_aware_on_ml_100k_init)
-        elif self.internal_config_dict['MODEL_TYPE'] == ModelType.SEQUENTIAL:
-            if model in ['DIN', 'DIEN']:
+        elif self.internal_config_dict["MODEL_TYPE"] == ModelType.SEQUENTIAL:
+            # MISSRec is a sequential model
+            if model in ["DIN", "DIEN"]:
                 self._update_internal_config_dict(DIN_init)
-                if dataset == 'ml-100k':
+                if dataset == "ml-100k":
                     self._update_internal_config_dict(DIN_on_ml_100k_init)
-            elif model in ['GRU4RecKG', 'KSR']:
+            elif model in ["GRU4RecKG", "KSR"]:
                 self._update_internal_config_dict(sequential_embedding_model_init)
             else:
                 self._update_internal_config_dict(sequential_init)
-                if dataset == 'ml-100k' and model in ['GRU4RecF', 'SASRecF', 'FDSA', 'S3Rec']:
-                    self._update_internal_config_dict(special_sequential_on_ml_100k_init)
+                if dataset == "ml-100k" and model in [
+                    "GRU4RecF",
+                    "SASRecF",
+                    "FDSA",
+                    "S3Rec",
+                ]:
+                    self._update_internal_config_dict(
+                        special_sequential_on_ml_100k_init
+                    )
 
-        elif self.internal_config_dict['MODEL_TYPE'] == ModelType.KNOWLEDGE:
+        elif self.internal_config_dict["MODEL_TYPE"] == ModelType.KNOWLEDGE:
             self._update_internal_config_dict(knowledge_base_init)
 
     def _get_final_config_dict(self):
@@ -263,132 +344,179 @@ class Config(object):
         return final_config_dict
 
     def _set_default_parameters(self):
-        self.final_config_dict['dataset'] = self.dataset
-        self.final_config_dict['model'] = self.model
-        if self.dataset == 'ml-100k':
+        self.final_config_dict["dataset"] = self.dataset
+        self.final_config_dict["model"] = self.model
+        if self.dataset == "ml-100k":
             current_path = os.path.dirname(os.path.realpath(__file__))
-            self.final_config_dict['data_path'] = os.path.join(current_path, '../dataset_example/' + self.dataset)
+            self.final_config_dict["data_path"] = os.path.join(
+                current_path, "../dataset_example/" + self.dataset
+            )
         else:
-            self.final_config_dict['data_path'] = os.path.join(self.final_config_dict['data_path'], self.dataset)
+            self.final_config_dict["data_path"] = os.path.join(
+                self.final_config_dict["data_path"], self.dataset
+            )
 
-        if hasattr(self.model_class, 'input_type'):
-            self.final_config_dict['MODEL_INPUT_TYPE'] = self.model_class.input_type
-        elif 'loss_type' in self.final_config_dict:
-            if self.final_config_dict['loss_type'] in ['CE']:
-                if self.final_config_dict['MODEL_TYPE'] == ModelType.SEQUENTIAL and \
-                   self.final_config_dict['neg_sampling'] is not None:
-                    raise ValueError(f"neg_sampling [{self.final_config_dict['neg_sampling']}] should be None "
-                                     f"when the loss_type is CE.")
-                self.final_config_dict['MODEL_INPUT_TYPE'] = InputType.POINTWISE
-            elif self.final_config_dict['loss_type'] in ['BPR']:
-                self.final_config_dict['MODEL_INPUT_TYPE'] = InputType.PAIRWISE
+        if hasattr(self.model_class, "input_type"):
+            # input_type is in ContextRecommender
+            self.final_config_dict["MODEL_INPUT_TYPE"] = self.model_class.input_type
+        elif "loss_type" in self.final_config_dict:
+            if self.final_config_dict["loss_type"] in ["CE"]:
+                if (
+                    self.final_config_dict["MODEL_TYPE"] == ModelType.SEQUENTIAL
+                    and self.final_config_dict["neg_sampling"] is not None
+                ):
+                    raise ValueError(
+                        f"neg_sampling [{self.final_config_dict['neg_sampling']}] should be None "
+                        f"when the loss_type is CE."
+                    ) # Why?
+                self.final_config_dict["MODEL_INPUT_TYPE"] = InputType.POINTWISE # POINTWISE: uid, iid, label
+            elif self.final_config_dict["loss_type"] in ["BPR"]:
+                self.final_config_dict["MODEL_INPUT_TYPE"] = InputType.PAIRWISE # PAIRWISE: uid, pos_iid, neg_iid
         else:
-            raise ValueError('Either Model has attr \'input_type\',' 'or arg \'loss_type\' should exist in config.')
+            raise ValueError(
+                "Either Model has attr 'input_type',"
+                "or arg 'loss_type' should exist in config."
+            )
 
-        metrics = self.final_config_dict['metrics']
-        if isinstance(metrics, str):
-            self.final_config_dict['metrics'] = [metrics]
+        metrics = self.final_config_dict["metrics"] # In, MISSRec, the metrics are from the external config file
+        if isinstance(metrics, str): # Convert to list
+            self.final_config_dict["metrics"] = [metrics]
 
         eval_type = set()
-        for metric in self.final_config_dict['metrics']:
+        for metric in self.final_config_dict["metrics"]:
             if metric.lower() in metric_types:
                 eval_type.add(metric_types[metric.lower()])
             else:
                 raise NotImplementedError(f"There is no metric named '{metric}'")
+        # 这里只留下了一个eval_type? 而且是随机的?
+        # 不是的.
+        # Only one eval_type! not eval metrics.
+        # loguru_logger.debug(f"eval_type: {eval_type}")
+        # loguru_logger.debug(f"eval_type len: {len(eval_type)}")
         if len(eval_type) > 1:
-            raise RuntimeError('Ranking metrics and value metrics can not be used at the same time.')
-        self.final_config_dict['eval_type'] = eval_type.pop()
+            raise RuntimeError(
+                "Ranking metrics and value metrics can not be used at the same time."
+            )
+        self.final_config_dict["eval_type"] = eval_type.pop()
 
-        if self.final_config_dict['MODEL_TYPE'] == ModelType.SEQUENTIAL and not self.final_config_dict['repeatable']:
-            raise ValueError('Sequential models currently only support repeatable recommendation, '
-                             'please set `repeatable` as `True`.')
+        if (
+            self.final_config_dict["MODEL_TYPE"] == ModelType.SEQUENTIAL
+            and not self.final_config_dict["repeatable"]
+        ):
+            raise ValueError(
+                "Sequential models currently only support repeatable recommendation, "
+                "please set `repeatable` as `True`."
+            )
 
-        valid_metric = self.final_config_dict['valid_metric'].split('@')[0]
-        self.final_config_dict['valid_metric_bigger'] = False if valid_metric.lower() in smaller_metrics else True
+        valid_metric = self.final_config_dict["valid_metric"].split("@")[0]
+        self.final_config_dict["valid_metric_bigger"] = (
+            False if valid_metric.lower() in smaller_metrics else True
+        )
 
-        topk = self.final_config_dict['topk']
+        topk = self.final_config_dict["topk"]
         if isinstance(topk, (int, list)):
             if isinstance(topk, int):
                 topk = [topk]
             for k in topk:
                 if k <= 0:
                     raise ValueError(
-                        f'topk must be a positive integer or a list of positive integers, but get `{k}`'
+                        f"topk must be a positive integer or a list of positive integers, but get `{k}`"
                     )
-            self.final_config_dict['topk'] = topk
+            self.final_config_dict["topk"] = topk
         else:
-            raise TypeError(f'The topk [{topk}] must be a integer, list')
+            raise TypeError(f"The topk [{topk}] must be a integer, list")
 
-        if 'additional_feat_suffix' in self.final_config_dict:
-            ad_suf = self.final_config_dict['additional_feat_suffix']
+        if "additional_feat_suffix" in self.final_config_dict:
+            ad_suf = self.final_config_dict["additional_feat_suffix"]
             if isinstance(ad_suf, str):
-                self.final_config_dict['additional_feat_suffix'] = [ad_suf]
+                self.final_config_dict["additional_feat_suffix"] = [ad_suf]
 
         # eval_args checking
+        # These args were set for SequentialRecommender in the internal yaml file.
         default_eval_args = {
-            'split': {'RS': [0.8, 0.1, 0.1]},
-            'order': 'RO',
-            'group_by': 'user',
-            'mode': 'full'
+            "split": {"RS": [0.8, 0.1, 0.1]},
+            "order": "RO",
+            "group_by": "user",
+            "mode": "full",
         }
-        if not isinstance(self.final_config_dict['eval_args'], dict):
-            raise ValueError(f"eval_args:[{self.final_config_dict['eval_args']}] should be a dict.")
+        if not isinstance(self.final_config_dict["eval_args"], dict):
+            raise ValueError(
+                f"eval_args:[{self.final_config_dict['eval_args']}] should be a dict."
+            )
         for op_args in default_eval_args:
-            if op_args not in self.final_config_dict['eval_args']:
-                self.final_config_dict['eval_args'][op_args] = default_eval_args[op_args]
+            if op_args not in self.final_config_dict["eval_args"]:
+                self.final_config_dict["eval_args"][op_args] = default_eval_args[
+                    op_args
+                ]
 
-        if (self.final_config_dict['eval_args']['mode'] == 'full'
-                and self.final_config_dict['eval_type'] == EvaluatorType.VALUE):
-            raise NotImplementedError('Full sort evaluation do not match value-based metrics!')
+        if (
+            self.final_config_dict["eval_args"]["mode"] == "full"
+            and self.final_config_dict["eval_type"] == EvaluatorType.VALUE
+        ):
+            raise NotImplementedError(
+                "Full sort evaluation do not match value-based metrics!"
+            )
 
     def _init_device(self):
-        use_gpu = self.final_config_dict['use_gpu']
+        use_gpu = self.final_config_dict["use_gpu"]
         if use_gpu:
-            os.environ["CUDA_VISIBLE_DEVICES"] = str(self.final_config_dict['gpu_id'])
-        self.final_config_dict['device'] = torch.device("cuda" if torch.cuda.is_available() and use_gpu else "cpu")
+            os.environ["CUDA_VISIBLE_DEVICES"] = str(self.final_config_dict["gpu_id"])
+        self.final_config_dict["device"] = torch.device(
+            "cuda" if torch.cuda.is_available() and use_gpu else "cpu"
+        )
 
     def _set_train_neg_sample_args(self):
-        neg_sampling = self.final_config_dict['neg_sampling']
+        neg_sampling = self.final_config_dict["neg_sampling"]
         if neg_sampling is None:
-            self.final_config_dict['train_neg_sample_args'] = {'strategy': 'none'}
+            self.final_config_dict["train_neg_sample_args"] = {"strategy": "none"}
         else:
             if not isinstance(neg_sampling, dict):
                 raise ValueError(f"neg_sampling:[{neg_sampling}] should be a dict.")
 
             distribution = list(neg_sampling.keys())[0]
             sample_num = neg_sampling[distribution]
-            if distribution not in ['uniform', 'popularity']:
-                raise ValueError(f"The distribution [{distribution}] of neg_sampling "
-                                 f"should in ['uniform', 'popularity']")
+            if distribution not in ["uniform", "popularity"]:
+                raise ValueError(
+                    f"The distribution [{distribution}] of neg_sampling "
+                    f"should in ['uniform', 'popularity']"
+                )
 
-            dynamic = 'none'
-            if 'dynamic' in neg_sampling.keys():
-                dynamic = neg_sampling['dynamic']
+            dynamic = "none"
+            if "dynamic" in neg_sampling.keys():
+                dynamic = neg_sampling["dynamic"]
 
-            self.final_config_dict['train_neg_sample_args'] = {
-                'strategy': 'by',
-                'by': sample_num,
-                'distribution': distribution,
-                'dynamic': dynamic
+            self.final_config_dict["train_neg_sample_args"] = {
+                "strategy": "by",
+                "by": sample_num,
+                "distribution": distribution,
+                "dynamic": dynamic,
             }
 
     def _set_eval_neg_sample_args(self):
-        eval_mode = self.final_config_dict['eval_args']['mode']
+        eval_mode = self.final_config_dict["eval_args"]["mode"]
         if not isinstance(eval_mode, str):
             raise ValueError(f"mode [{eval_mode}] in eval_args should be a str.")
-        if eval_mode == 'labeled':
-            eval_neg_sample_args = {'strategy': 'none', 'distribution': 'none'}
-        elif eval_mode == 'full':
-            eval_neg_sample_args = {'strategy': 'full', 'distribution': 'uniform'}
-        elif eval_mode[0:3] == 'uni':
+        if eval_mode == "labeled":
+            eval_neg_sample_args = {"strategy": "none", "distribution": "none"}
+        elif eval_mode == "full":
+            eval_neg_sample_args = {"strategy": "full", "distribution": "uniform"}
+        elif eval_mode[0:3] == "uni":
             sample_by = int(eval_mode[3:])
-            eval_neg_sample_args = {'strategy': 'by', 'by': sample_by, 'distribution': 'uniform'}
-        elif eval_mode[0:3] == 'pop':
+            eval_neg_sample_args = {
+                "strategy": "by",
+                "by": sample_by,
+                "distribution": "uniform",
+            }
+        elif eval_mode[0:3] == "pop":
             sample_by = int(eval_mode[3:])
-            eval_neg_sample_args = {'strategy': 'by', 'by': sample_by, 'distribution': 'popularity'}
+            eval_neg_sample_args = {
+                "strategy": "by",
+                "by": sample_by,
+                "distribution": "popularity",
+            }
         else:
-            raise ValueError(f'the mode [{eval_mode}] in eval_args is not supported.')
-        self.final_config_dict['eval_neg_sample_args'] = eval_neg_sample_args
+            raise ValueError(f"the mode [{eval_mode}] in eval_args is not supported.")
+        self.final_config_dict["eval_neg_sample_args"] = eval_neg_sample_args
 
     def __setitem__(self, key, value):
         if not isinstance(key, str):
@@ -396,8 +524,10 @@ class Config(object):
         self.final_config_dict[key] = value
 
     def __getattr__(self, item):
-        if 'final_config_dict' not in self.__dict__:
-            raise AttributeError(f"'Config' object has no attribute 'final_config_dict'")
+        if "final_config_dict" not in self.__dict__:
+            raise AttributeError(
+                f"'Config' object has no attribute 'final_config_dict'"
+            )
         if item in self.final_config_dict:
             return self.final_config_dict[item]
         raise AttributeError(f"'Config' object has no attribute '{item}'")
@@ -414,23 +544,34 @@ class Config(object):
         return key in self.final_config_dict
 
     def __str__(self):
-        args_info = '\n'
+        args_info = "\n"
         for category in self.parameters:
-            args_info += set_color(category + ' Hyper Parameters:\n', 'pink')
-            args_info += '\n'.join([(set_color("{}", 'cyan') + " =" + set_color(" {}", 'yellow')).format(arg, value)
-                                    for arg, value in self.final_config_dict.items()
-                                    if arg in self.parameters[category]])
-            args_info += '\n\n'
+            args_info += set_color(category + " Hyper Parameters:\n", "pink")
+            args_info += "\n".join(
+                [
+                    (
+                        set_color("{}", "cyan") + " =" + set_color(" {}", "yellow")
+                    ).format(arg, value)
+                    for arg, value in self.final_config_dict.items()
+                    if arg in self.parameters[category]
+                ]
+            )
+            args_info += "\n\n"
 
-        args_info += set_color('Other Hyper Parameters: \n', 'pink')
-        args_info += '\n'.join([
-            (set_color("{}", 'cyan') + " = " + set_color("{}", 'yellow')).format(arg, value)
-            for arg, value in self.final_config_dict.items()
-            if arg not in {
-                _ for args in self.parameters.values() for _ in args
-            }.union({'model', 'dataset', 'config_files'})
-        ])
-        args_info += '\n\n'
+        args_info += set_color("Other Hyper Parameters: \n", "pink")
+        args_info += "\n".join(
+            [
+                (set_color("{}", "cyan") + " = " + set_color("{}", "yellow")).format(
+                    arg, value
+                )
+                for arg, value in self.final_config_dict.items()
+                if arg
+                not in {_ for args in self.parameters.values() for _ in args}.union(
+                    {"model", "dataset", "config_files"}
+                )
+            ]
+        )
+        args_info += "\n\n"
         return args_info
 
     def __repr__(self):

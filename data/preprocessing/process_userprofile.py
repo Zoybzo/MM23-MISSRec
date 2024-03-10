@@ -90,11 +90,16 @@ def preprocess_text(args, rating_inters):
     item_text_list = generate_text(args, rating_items)
     print("\n")
 
+    # write item text
+    with open(os.path.join(args.output_path, f"{args.dataset}.text"), "w") as file:
+        for item_id, item_text in item_text_list:
+            file.write(f"{item_id}\t{item_text}\n")
+
     # return: list of (item_ID, cleaned_item_text)
     return item_text_list
 
 
-def convert_inters2dict(inters):
+def convert_inters2dict(inters, userprofile):
     user2items = collections.defaultdict(list)
     user2index, item2index = dict(), dict()
     for inter in inters:
@@ -104,25 +109,29 @@ def convert_inters2dict(inters):
         if item not in item2index:
             item2index[item] = len(item2index)
         user2items[user2index[user]].append(item2index[item])
-    return user2items, user2index, item2index
+        userprofile[user2index[user]] = userprofile[user]
+    # write user2index
+    with open(os.path.join(args.output_path, f"{args.dataset}.user2index"), "w") as file:
+        for key, value in user2index.items():
+            file.write(f"{key}\t{value}\n")
+    # write item2index
+    with open(os.path.join(args.output_path, f"{args.dataset}.item2index"), "w") as file:
+        for key, value in item2index.items():
+            file.write(f"{key}\t{value}\n")
+    return userprofile, user2items, user2index, item2index
 
 
-def generate_training_data(args, rating_inters, userprofile):
-    print("Split dataset: ")
-    print(" Dataset: ", args.dataset)
-
-    # generate train valid test
-    user2items, user2index, item2index = convert_inters2dict(rating_inters)
-    train_inters = dict()
-    for u_index in range(len(user2index)):
-        inters = user2items[u_index]
-        # Add the user profile
-        train_inters[u_index] = []
-        for i_index in inters:
-            train_inters[u_index].append(str(i_index))
-        for up in userprofile[u_index]:
-            train_inters[u_index].append(up)
-    return train_inters, user2index, item2index
+# def generate_training_data(args, rating_inters):
+#     """
+#     rating_inters: [(userid, itemid, rating, int(ts))]
+#     """
+#     print("Split dataset: ")
+#     print(" Dataset: ", args.dataset)
+#
+#     # generate train valid test
+#     user2items, user2index, item2index = convert_inters2dict(rating_inters)
+#     # user2items: {uid: [iid1, iid2, ...]}
+#     return user2items, user2index, item2index
 
 
 def preprocess_userprofile(args):
@@ -130,12 +139,28 @@ def preprocess_userprofile(args):
     print(" Dataset: ", args.dataset)
     userprofile = collections.defaultdict(list)
     userprofile_file_path = os.path.join(args.input_path, "users.dat")
+    # 	*  1:  "Under 18"
+    # * 18:  "18-24"
+    # * 25:  "25-34"
+    # * 35:  "35-44"
+    # * 45:  "45-49"
+    # * 50:  "50-55"
+    # * 56:  "56+"
+    age_dict = {
+        "1": 0,
+        "18": 1,
+        "25": 2,
+        "35": 3,
+        "45": 4,
+        "50": 5,
+        "56": 6,
+    }
     with open(userprofile_file_path, "r") as fp:
         cr = fp.readlines()
         for line in tqdm(cr, desc="Load user profile"):
             try:
                 userid, gender, age, occupation, zip = line.strip().split("::")
-                age = int(age)
+                age = age_dict[str(age)]
                 gender = 0 if gender == "F" else 1
                 occupation = int(occupation)
                 userprofile[userid].append(age)
@@ -153,8 +178,8 @@ def parse_args():
     parser.add_argument("--item_k", type=int, default=5, help="item k-core filtering")
     parser.add_argument("--input_path", type=str, default="../raw/")
     parser.add_argument("--output_path", type=str, default="../downstream/")
-    parser.add_argument("--gpu_id", type=int, default=2, help="ID of running GPU")
-    parser.add_argument("--plm_name", type=str, default="bert-base-uncased")
+    parser.add_argument("--gpu_id", type=int, default=3, help="ID of running GPU")
+    parser.add_argument("--plm_name", type=str, default="openai/clip-vit-base-patch32")
     parser.add_argument(
         "--emb_type",
         type=str,
@@ -171,28 +196,25 @@ def parse_args():
 
 
 def convert_to_atomic_files(
-    args, train_data, train_radio=0.8, valid_radio=0.1, test_radio=0.1
+    args, train_data, userprofile, train_radio=0.8, valid_radio=0.1, test_radio=0.1
 ):
-    # train_data: {uid: [iid1, iid2, ..., age, gender, occupation]}
+    # train_data: {uid: [iid1, iid2, ...]}
     print("Convert dataset: ")
     print(" Dataset: ", args.dataset)
     uid_list = list(train_data.keys())
-    # uid_list.sort(key=lambda t: int(t))
     # shuffle the uid list
     random.shuffle(uid_list)
     inter_list = list()
     # generate the list
     for uid in uid_list:
-        train_data[uid] = train_data[uid][:-3]
-        userprofile_data = train_data[uid][-3:]
-        tmp_list = list()
-        tmp_list.append(uid)
-        for i in range(len(train_data[uid])):
-            for j in range(1, i):
-                tmp_list.append(train_data[uid][j])
+        for i in range(1, len(train_data[uid]) + 1):
+            tmp_list = list()
+            tmp_list.append(uid)
+            for j in range(0, i):
+                tmp_list.append(str(train_data[uid][j]))
             # add userprofile data
-            tmp_list.extend(userprofile_data)
-        inter_list.append(tmp_list)
+            tmp_list.extend(userprofile[uid])
+            inter_list.append(tmp_list)
     train_len = int(len(inter_list) * train_radio)
     valid_len = int(len(inter_list) * valid_radio)
     test_len = len(inter_list) - train_len - valid_len
@@ -201,36 +223,39 @@ def convert_to_atomic_files(
     print("Test: ", test_len)
 
     with open(
-        os.path.join(args.output_path, args.dataset, f"{args.dataset}.train.inter"), "w"
+        os.path.join(args.output_path, f"{args.dataset}.train.inter"), "w"
     ) as file:
         file.write(
-            "user_id:token\titem_id_list:token_seq\tage:token\tgender:token\toccupation:token\n"
+            # "user_id:token\titem_id_list:token_seq\tage:token\tgender:token\toccupation:token\n"
+            "user_id:token\titem_id_list:token_seq\titem_id:token\tage:token\tgender:token\toccupation:token\n"
         )
         for i in range(train_len):
             file.write(
-                f'{inter_list[i][0]}\t{" ".join(inter_list[i][1:-3])}\t{inter_list[i][-3]}\t{inter_list[i][-2]}\t{inter_list[i][-1]}\n'
+                f'{inter_list[i][0]}\t{" ".join(inter_list[i][1:-3])}\t{inter_list[i][-4]}\t{inter_list[i][-3]}\t{inter_list[i][-2]}\t{inter_list[i][-1]}\n'
             )
 
     with open(
-        os.path.join(args.output_path, args.dataset, f"{args.dataset}.valid.inter"), "w"
+        os.path.join(args.output_path, f"{args.dataset}.valid.inter"), "w"
     ) as file:
         file.write(
-            "user_id:token\titem_id_list:token_seq\tage:token\tgender:token\toccupation:token\n"
+            # "user_id:token\titem_id_list:token_seq\tage:token\tgender:token\toccupation:token\n"
+            "user_id:token\titem_id_list:token_seq\titem_id:token\tage:token\tgender:token\toccupation:token\n"
         )
         for i in range(train_len, train_len + valid_len):
             file.write(
-                f'{inter_list[i][0]}\t{" ".join(inter_list[i][1:-3])}\t{inter_list[i][-3]}\t{inter_list[i][-2]}\t{inter_list[i][-1]}\n'
+                f'{inter_list[i][0]}\t{" ".join(inter_list[i][1:-3])}\t{inter_list[i][-4]}\t{inter_list[i][-3]}\t{inter_list[i][-2]}\t{inter_list[i][-1]}\n'
             )
 
     with open(
-        os.path.join(args.output_path, args.dataset, f"{args.dataset}.test.inter"), "w"
+        os.path.join(args.output_path, f"{args.dataset}.test.inter"), "w"
     ) as file:
         file.write(
-            "user_id:token\titem_id_list:token_seq\tage:token\tgender:token\toccupation:token\n"
+            # "user_id:token\titem_id_list:token_seq\tage:token\tgender:token\toccupation:token\n"
+            "user_id:token\titem_id_list:token_seq\titem_id:token\tage:token\tgender:token\toccupation:token\n"
         )
         for i in range(train_len + valid_len, len(inter_list)):
             file.write(
-                f'{inter_list[i][0]}\t{" ".join(inter_list[i][1:-3])}\t{inter_list[i][-3]}\t{inter_list[i][-2]}\t{inter_list[i][-1]}\n'
+                f'{inter_list[i][0]}\t{" ".join(inter_list[i][1:-3])}\t{inter_list[i][-4]}\t{inter_list[i][-3]}\t{inter_list[i][-2]}\t{inter_list[i][-1]}\n'
             )
 
 
@@ -247,8 +272,8 @@ if __name__ == "__main__":
     userprofile = preprocess_userprofile(args)
 
     # split train/valid/test
-    train_inters, user2index, item2index = generate_training_data(
-        args, rating_inters, userprofile
+    userprofile, train_inters, user2index, item2index = convert_inters2dict(
+        rating_inters, userprofile
     )
 
     # device & plm initialization
@@ -276,4 +301,4 @@ if __name__ == "__main__":
         )
 
     # save interaction sequences into atomic files
-    convert_to_atomic_files(args, train_inters)
+    convert_to_atomic_files(args, train_inters, userprofile)
