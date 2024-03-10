@@ -715,11 +715,11 @@ class DDPMISSRecTrainer(DDPTrainer):
         text_embedding_num, img_embedding_num = 0, 0
         if "text" in self.model.modal_type:
             text_embedding_num = self.model.plm_embedding.num_embeddings - 1
-            loguru_logger.debug(f"text_embedding_num: {text_embedding_num}") # value: N
+            # loguru_logger.debug(f"text_embedding_num: {text_embedding_num}")  # value: N
         if "img" in self.model.modal_type:
             img_embedding_num = self.model.img_embedding.num_embeddings - 1
 
-        loguru_logger.debug(f"self.rank: {self.rank}")
+        # loguru_logger.debug(f"self.rank: {self.rank}")
         if self.rank == 0:
             all_embedding_list = []
             self.model.eval()
@@ -728,7 +728,9 @@ class DDPMISSRecTrainer(DDPTrainer):
                 all_text_embeddings = self.model.text_adaptor(
                     self.model.plm_embedding.weight.data[1:]
                 )
-                loguru_logger.debug(f"shape of all_text_embeddings: {all_text_embeddings.shape}")
+                # loguru_logger.debug(
+                # f"shape of all_text_embeddings: {all_text_embeddings.shape}"
+                # )
                 all_embedding_list.append(all_text_embeddings)
             if "img" in self.model.modal_type:
                 all_img_embeddings = self.model.img_adaptor(
@@ -736,7 +738,7 @@ class DDPMISSRecTrainer(DDPTrainer):
                 )
                 all_embedding_list.append(all_img_embeddings)
             all_embedding = torch.cat(all_embedding_list, dim=0)
-            loguru_logger.debug(f"shape of all_embedding: {all_embedding.shape}")
+            # loguru_logger.debug(f"shape of all_embedding: {all_embedding.shape}")
 
             # multi-modal interest discovery
             # cluster_idx, centroids = cluster_dpc_knn(

@@ -25,7 +25,7 @@ class MISSRec(Transformer):
         ]  # 'static' | 'dynamic_shared' | 'dynamic_instance'
         # NOTE: `plm_embedding` in pre-train stage will be carried via dataloader
         assert self.item_mm_fusion in ["static", "dynamic_shared", "dynamic_instance"]
-        self.USER_PROFILE = config["label_field"]
+        self.USER_PROFILE = config["LABEL_FIELD"]
 
         assert self.train_stage in [
             "pretrain",
@@ -33,9 +33,7 @@ class MISSRec(Transformer):
             "transductive_ft",
             "userprofile_ft",
         ], f"Unknown train stage: [{self.train_stage}]"
-        loguru_logger.debug(f"train_stage in MISSRec init: {self.train_stage}")
-        if self.train_stage in ["userprofile_ft"]:
-            self.mlp = nn.Linear(config["hidden_size"], config["num_classes"])
+        # loguru_logger.debug(f"train_stage in MISSRec init: {self.train_stage}")
         if self.train_stage in ["pretrain", "inductive_ft", "userprofile_ft"]:
             self.item_embedding = None  # with id
         # for `transductive_ft`, `item_embedding` is defined in SASRec base model
@@ -94,6 +92,15 @@ class MISSRec(Transformer):
 
         if "img" in self.modal_type:
             self.img_adaptor = nn.Linear(config["img_size"], config["hidden_size"])
+
+        if self.train_stage in ["userprofile_ft"]:
+            self.mlp1 = nn.Linear(
+                self.plm_embedding.num_embeddings, config["hidden_size"]
+            )
+            # Activation function
+            self.activation1 = nn.ReLU()
+            self.mlp2 = nn.Linear(config["hidden_size"], config["num_classes"])
+            self.activation2 = nn.Softmax(dim=-1)
 
     def get_encoder_attention_mask(self, dec_input_seq=None, is_casual=True):
         """memory_mask: [BxL], dec_input_seq: [BxNq]"""
@@ -166,19 +173,23 @@ class MISSRec(Transformer):
         position_ids = torch.arange(
             item_seq.size(1), dtype=torch.long, device=item_seq.device
         )
-        loguru_logger.debug(f"position_ids.shape: {position_ids.shape}") # [L]
+        # loguru_logger.debug(f"position_ids.shape: {position_ids.shape}")  # [L]
         position_embedding = self.position_embedding(position_ids)  # [LxD]
 
-        loguru_logger.debug(f"position_embedding.shape: {position_embedding.shape}") # [LxD]
-        loguru_logger.debug(f"item_emb.shape: {item_emb.shape}") # [BxLxD]
+        # loguru_logger.debug(
+        # f"position_embedding.shape: {position_embedding.shape}"
+        # )  # [LxD]
+        # loguru_logger.debug(f"item_emb.shape: {item_emb.shape}")  # [BxLxD]
 
         # repeat position_embedding to match the batch size
         position_embedding = position_embedding.unsqueeze(0).expand(
             item_seq.size(0), -1, -1
         )  # [BxLxD]
-        loguru_logger.debug(f"position_embedding.shape after expand: {position_embedding.shape}") # [BxLxD]
+        # loguru_logger.debug(
+        # f"position_embedding.shape after expand: {position_embedding.shape}"
+        # )  # [BxLxD]
         dec_input_emb = item_emb + position_embedding  # [BxMxLxD] or [BxLxD]
-        loguru_logger.debug(f"dec_input_emb.shape: {dec_input_emb.shape}") # [BxLxD]
+        # loguru_logger.debug(f"dec_input_emb.shape: {dec_input_emb.shape}")  # [BxLxD]
 
         if self.train_stage == "transductive_ft":
             if self.id_type != "none":
@@ -336,23 +347,27 @@ class MISSRec(Transformer):
         return loss
 
     def userprofile(self, interaction):
-        loguru_logger.debug(f"Enter userprofile")
+        # loguru_logger.debug(f"Enter userprofile")
         # Loss for fine-tuning
-        loguru_logger.debug(f"interaction: {interaction}")
-        loguru_logger.debug(f"self.USER_PROFILE: {self.USER_PROFILE}")
-        loguru_logger.debug(f"shape of interaction[self.USER_PROFILE]: {interaction[self.USER_PROFILE].shape}") # [B]
-        loguru_logger.debug(f"self.ITEM_SEQ: {self.ITEM_SEQ}") # L
-        item_seq = interaction[self.ITEM_SEQ] # [BxL]
-        item_seq_len = interaction[self.ITEM_SEQ_LEN] # [B]
+        # loguru_logger.debug(f"interaction: {interaction}")
+        # loguru_logger.debug(f"self.USER_PROFILE: {self.USER_PROFILE}")
+        # loguru_logger.debug(
+        # f"shape of interaction[self.USER_PROFILE]: {interaction[self.USER_PROFILE].shape}"
+        # )  # [B]
+        # loguru_logger.debug(f"self.ITEM_SEQ: {self.ITEM_SEQ}")  # L
+        item_seq = interaction[self.ITEM_SEQ]  # [BxL]
+        item_seq_len = interaction[self.ITEM_SEQ_LEN]  # [B]
 
-        loguru_logger.debug(f"item_seq shape: {item_seq.shape}")
-        loguru_logger.debug(f"item_seq_len shape: {item_seq_len.shape}")
+        # loguru_logger.debug(f"item_seq shape: {item_seq.shape}")
+        # loguru_logger.debug(f"item_seq_len shape: {item_seq_len.shape}")
 
         seq_output, interest_orthogonal_regularization = self._compute_seq_embeddings(
             item_seq, item_seq_len
         )
-        loguru_logger.debug(f"seq_output shape: {seq_output.shape}")
-        loguru_logger.debug(f"interest_orthogonal_regularization shape: {interest_orthogonal_regularization.shape}")
+        # loguru_logger.debug(f"seq_output shape: {seq_output.shape}")
+        # loguru_logger.debug(
+        # f"interest_orthogonal_regularization shape: {interest_orthogonal_regularization.shape}"
+        # )
         if "text" in self.modal_type and "img" in self.modal_type:  # weighted fusion
             test_text_emb = self.text_adaptor(self.plm_embedding.weight)
             test_img_emb = self.img_adaptor(self.img_embedding.weight)
@@ -368,12 +383,21 @@ class MISSRec(Transformer):
                 torch.matmul(seq_output, test_item_emb.transpose(0, 1))
                 / self.temperature
             )
-            loguru_logger.debug(f"logits shape: {logits.shape}")
-            logits = self.mlp(logits)
-            loguru_logger.debug(f"logits shape after mlp: {logits.shape}")
+            # loguru_logger.debug(f"logits shape: {logits.shape}")
+            logits = self.mlp1(logits)
+            logits = self.activation1(logits)
+            logits = self.mlp2(logits)
+            logits = self.activation2(logits)
+            # logits: [BxN]
+            # remain the big one in the logits
+            # logits = logits.max(dim=-1).values
+            # loguru_logger.debug(f"logits shape after mlp: {logits.shape}")
+            # loguru_logger.debug(f"logits: {logits}")
         # pos_items should be the user profile
         # pos_items = interaction[self.POS_ITEM_ID]
-        pos_items = interaction[self.USER_PROFILE]
+        pos_items = interaction[self.USER_PROFILE] - 1
+        # loguru_logger.debug(f"pos_items shape: {pos_items.shape}")
+        # loguru_logger.debug(f"pos_items: {pos_items}")
         # DEBUG: Show the logits shape and the pos_items shape
         # loguru_logger.debug(logits.shape, pos_items.shape)
         loss = (
@@ -432,18 +456,22 @@ class MISSRec(Transformer):
         return seq_output, interest_orthogonal_regularization
 
     def _compute_seq_embeddings(self, item_seq, item_seq_len):
-        loguru_logger.debug(f"shape of item_seq: {item_seq.shape}") # [BxL]
-        loguru_logger.debug(f"shape of item_seq_len: {item_seq_len.shape}") # [B]
+        # loguru_logger.debug(f"shape of item_seq: {item_seq.shape}")  # [BxL]
+        # loguru_logger.debug(f"shape of item_seq_len: {item_seq_len.shape}")  # [B]
         if "text" in self.modal_type:
             tmp_plm_embedding = self.plm_embedding(item_seq)
-            loguru_logger.debug(f"shape of tmp_plm_embedding: {tmp_plm_embedding.shape}")
+            # loguru_logger.debug(
+            # f"shape of tmp_plm_embedding: {tmp_plm_embedding.shape}"
+            # )
             text_emb = self.text_adaptor(tmp_plm_embedding)
             # item_seq: [BxL]
             # plm_embedding: [BxLxD]
             # text_emb: [BxLxD]
-            loguru_logger.debug(f"shape of text_emb: {text_emb.shape}")
+            # loguru_logger.debug(f"shape of text_emb: {text_emb.shape}")
             text_emb_empty_mask = self.plm_embedding_empty_mask[item_seq]
-            loguru_logger.debug(f"shape of text_emb_empty_mask: {text_emb_empty_mask.shape}")
+            # loguru_logger.debug(
+            # f"shape of text_emb_empty_mask: {text_emb_empty_mask.shape}"
+            # )
             # text_emb_empty_mask: [BxL]
         if "img" in self.modal_type:
             img_emb = self.img_adaptor(self.img_embedding(item_seq))
@@ -521,6 +549,8 @@ class MISSRec(Transformer):
                 test_item_emb = test_item_emb + self.item_embedding.weight
 
         test_item_emb = F.normalize(test_item_emb, dim=1)
+        # loguru_logger.debug(f"test_item_emb shape: {test_item_emb.shape}")
+        # loguru_logger.debug(f"test_item_emb: {test_item_emb}")
         return test_item_emb
 
     def _compute_dynamic_fused_logits(self, seq_output, text_emb, img_emb):
@@ -546,7 +576,7 @@ class MISSRec(Transformer):
         return agg_logits
 
     def calculate_loss(self, interaction):
-        loguru_logger.debug(f"self.train_stage: {self.train_stage}")
+        # loguru_logger.debug(f"self.train_stage: {self.train_stage}")
         if self.train_stage == "pretrain":
             return self.pretrain(interaction)
         if self.train_stage == "userprofile_ft":
@@ -582,6 +612,7 @@ class MISSRec(Transformer):
         )
         return loss
 
+    # TODO: Need update for userprofile task
     def full_sort_predict(self, interaction):
         item_seq = interaction[self.ITEM_SEQ]
         item_seq_len = interaction[self.ITEM_SEQ_LEN]
@@ -603,3 +634,36 @@ class MISSRec(Transformer):
                 / self.temperature
             )
         return scores
+
+    def predict(self, interaction):
+        # loguru_logger.debug(f"interaction: {interaction}")
+        item_seq = interaction[self.ITEM_SEQ]
+        item_seq_len = interaction[self.ITEM_SEQ_LEN]  # [B]
+
+        # loguru_logger.debug(f"item_seq shape: {item_seq.shape}")
+        # loguru_logger.debug(f"item_seq_len shape: {item_seq_len.shape}")
+
+        seq_output, interest_orthogonal_regularization = self._compute_seq_embeddings(
+            item_seq, item_seq_len
+        )
+        test_item_emb = self._compute_test_item_embeddings()
+        logits = (
+            torch.matmul(seq_output, test_item_emb.transpose(0, 1)) / self.temperature
+        )
+        # loguru_logger.debug(f"logits shape: {logits.shape}")
+        logits = self.mlp1(logits)
+        logits = self.activation1(logits)
+        logits = self.mlp2(logits)
+        logits = self.activation2(logits)
+        # logits: [BxN]
+        # remain the big one in the logits
+        # logits = logits.max(dim=-1).values
+        # loguru_logger.debug(f"logits shape after mlp: {logits.shape}")
+        # loguru_logger.debug(f"logits: {logits}")
+        # pos_items should be the user profile
+        # pos_items = interaction[self.POS_ITEM_ID]
+        pos_items = interaction[self.USER_PROFILE] - 1
+        # Get the index of the biggest value in the logits
+        logits = logits.argmax(dim=-1)
+        correct = (logits == pos_items).float()
+        return correct

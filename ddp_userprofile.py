@@ -60,7 +60,7 @@ def userprofile(
     if config["train_stage"] != mode + "_ft":
         logger.info(f"Change train stage from '{config['train_stage']}' to '{mode}_ft'")
         config["train_stage"] = mode + "_ft"
-    loguru_logger.debug(f"train stage in config: {config['train_stage']}")
+    # loguru_logger.debug(f"train stage in config: {config['train_stage']}")
     logger.info(config)
     # dataset filtering
     dataset = MISSRecDataset(config)
@@ -68,9 +68,9 @@ def userprofile(
     # dataset splitting
     train_data, valid_data, test_data = data_preparation(config, dataset)
     # model loading and init
-    loguru_logger.debug(f"train stage before model: {config['train_stage']}")
+    # loguru_logger.debug(f"train stage before model: {config['train_stage']}")
     model = MISSRec(config, train_data.dataset)
-    loguru_logger.debug(f"train stage after model: {model.train_stage}")
+    # loguru_logger.debug(f"train stage after model: {model.train_stage}")
     # count trainable parameters
     if rank == 0:
         trainable_params = []
@@ -83,9 +83,9 @@ def userprofile(
         checkpoint = torch.load(pretrained_file, map_location=config["device"])
         logger.info(f"Loading from {pretrained_file}")
         logger.info(f"Transfer [{checkpoint['config']['dataset']}] -> [{dataset}]")
-        loguru_logger.debug(f"train stage before loading: {model.train_stage}")
+        # loguru_logger.debug(f"train stage before loading: {model.train_stage}")
         model.load_state_dict(checkpoint["state_dict"], strict=False)
-        loguru_logger.debug(f"train stage after loading: {model.train_stage}")
+        # loguru_logger.debug(f"train stage after loading: {model.train_stage}")
         if fix_enc:
             logger.info(f"Fixing encoder parameters")
             for _ in model.position_embedding.parameters():
@@ -102,9 +102,6 @@ def userprofile(
                 _.requires_grad = False
     logger.info(model)
     # trainer loading and init
-    # TODO: Perhaps need to update the trainer
-    loguru_logger.debug(f"Enter DDPMISSRecTrainer.")
-    loguru_logger.debug(f"train stage before trainer: {model.train_stage}")
     trainer = DDPMISSRecTrainer(config, model)
     # model training
     best_valid_score, best_valid_result = trainer.fit(
@@ -146,6 +143,10 @@ def init():
 
 
 if __name__ == "__main__":
+    # loguru_logger.remove()
+    # loguru_logger.add(sys.stderr, level="INFO")
+    # loguru_logger.disable(None)
+
     # init()
     parser = argparse.ArgumentParser()
     parser.add_argument(

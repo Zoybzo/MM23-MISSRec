@@ -64,10 +64,12 @@ class MISSRecDataset(SequentialDataset):
         )
         loaded_feat = np.fromfile(feat_path, dtype=np.float32).reshape(
             -1, self.plm_size
-        ) # [?xP]
-        loguru_logger.debug(f'loaded_feat.shape: {loaded_feat.shape}')
-        mapped_feat = np.zeros((self.item_num, self.plm_size)) # [NxP]
-        loguru_logger.debug(f'self.field2id_token["item_id"]: {self.field2id_token["item_id"]}')
+        )  # [?xP]
+        # loguru_logger.debug(f"loaded_feat.shape: {loaded_feat.shape}")
+        mapped_feat = np.zeros((self.item_num, self.plm_size))  # [NxP]
+        # loguru_logger.debug(
+        # f'self.field2id_token["item_id"]: {self.field2id_token["item_id"]}'
+        # )
         for i, token in enumerate(self.field2id_token["item_id"]):
             if token == "[PAD]":
                 continue

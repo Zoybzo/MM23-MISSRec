@@ -3,21 +3,24 @@ benchmark_filename: [ train, valid, test ]
 #ITEM_ID_FIELD: item_id_list
 #ITEM_ID_LIST_FIELD: item_id_list
 load_col:
-  inter: [ user_id, item_id_list, item_id, gender]
+  inter: [ user_id, item_id_list, item_id, age]
 alias_of_item_id: [ item_id_list ]
-label_field: gender
-num_classes: 2
+LABEL_FIELD: age
+# USER_PROFILE: age
+num_classes: 7
 #user_profile: gender
 neg_sampling: ~
 transform: ~
 
-topk: [ 10, 50 ]
-metrics: [ HIT, NDCG ]
-valid_metric: NDCG@10
+# topk: [ 10, 50 ]
+# metrics: [ HIT, NDCG ]
+metrics: [ AUC, RMSE ]
+# valid_metric: NDCG@10
+valid_metric: AUC
 # train_stage: transductive_ft  # inductive_ft (w/o ID) / transductive_ft (default, w/ ID)
 train_stage: userprofile_ft # inductive_ft (w/o ID) / transductive_ft (default, w/ ID)
-eval_batch_size: 256
-train_batch_size: 128
+eval_batch_size: 512
+train_batch_size: 256
 stopping_step: 10
 
 gpu_id: '0'
@@ -28,5 +31,5 @@ interest_ratio: 0.5
 # - for DPC-KNN only
 knn_local_ratio: 0.1
 
-reproducibility: true
-state: DEBUG
+# reproducibility: true
+# state: DEBUG

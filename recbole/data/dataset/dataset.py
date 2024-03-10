@@ -208,7 +208,7 @@ class Dataset:
             for suf in self.config["additional_feat_suffix"]:
                 if getattr(self, f"{suf}_feat", None) is not None:
                     feat_name_list.append(f"{suf}_feat")
-        loguru_logger.debug(f"feat_name_list: {feat_name_list}")
+        # loguru_logger.debug(f"feat_name_list: {feat_name_list}")
         return feat_name_list
 
     def _get_download_url(self, url_file, allow_none=False):
@@ -1051,8 +1051,8 @@ class Dataset:
 
     def _remap_ID_all(self):
         """Remap all token-like fields."""
-        loguru_logger.debug(f"self.alias: {self.alias}")
-        loguru_logger.debug(f"self._rest_fields: {self._rest_fields}")
+        # loguru_logger.debug(f"self.alias: {self.alias}")
+        # loguru_logger.debug(f"self._rest_fields: {self._rest_fields}")
 
         for alias in self.alias.values():
             remap_list = self._get_remap_list(alias)

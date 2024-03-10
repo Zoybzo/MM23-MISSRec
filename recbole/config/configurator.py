@@ -80,19 +80,21 @@ class Config(object):
             config_dict (dict): the external parameter dictionaries, default is None.
         """
         # Load the parameters from the fixed properties in RecBole.
-        self._init_parameters_category() # self.parameters: {'General': [], 'Training': [], 'Evaluation': [], 'Dataset': []}
-        self.yaml_loader = self._build_yaml_loader() # Used to load the yaml file.
+        self._init_parameters_category()  # self.parameters: {'General': [], 'Training': [], 'Evaluation': [], 'Dataset': []}
+        self.yaml_loader = self._build_yaml_loader()  # Used to load the yaml file.
         # Load the parameters from the external input.
         self.file_config_dict = self._load_config_files(config_file_list)
         self.variable_config_dict = self._load_variable_config_dict(config_dict)
         self.cmd_config_dict = self._load_cmd_line()
         # Merge the parameters from the external input.
-        self._merge_external_config_dict() # self.external_config_dict: the merged parameters from the external input.
+        self._merge_external_config_dict()  # self.external_config_dict: the merged parameters from the external input.
 
         self.model, self.model_class, self.dataset = self._get_model_and_dataset(
             model, dataset
-        ) # model_name, model_class, dataset_name
-        self._load_internal_config_dict(self.model, self.model_class, self.dataset) # Load the internal config from the properties in RecBole.
+        )  # model_name, model_class, dataset_name
+        self._load_internal_config_dict(
+            self.model, self.model_class, self.dataset
+        )  # Load the internal config from the properties in RecBole.
         # Merge the internal config and the external config.
         self.final_config_dict = self._get_final_config_dict()
         self._set_default_parameters()
@@ -223,8 +225,10 @@ class Config(object):
             final_model_class = model
             final_model = model.__name__
         else:
-            final_model = model # model name
-            final_model_class = get_model(final_model) # Search the existing model class in RecBole
+            final_model = model  # model name
+            final_model_class = get_model(
+                final_model
+            )  # Search the existing model class in RecBole
 
         if dataset is None:
             try:
@@ -235,7 +239,7 @@ class Config(object):
                     "[dataset variable, config file, config dict, command line] "
                 )
         else:
-            final_dataset = dataset # str
+            final_dataset = dataset  # str
 
         return final_model, final_model_class, final_dataset
 
@@ -294,7 +298,7 @@ class Config(object):
             sample_init_file,
             dataset_init_file,
         ]:
-            if os.path.isfile(file): # If the file exists
+            if os.path.isfile(file):  # If the file exists
                 config_dict = self._update_internal_config_dict(file)
                 if file == dataset_init_file:
                     self.parameters["Dataset"] += [
@@ -368,18 +372,24 @@ class Config(object):
                     raise ValueError(
                         f"neg_sampling [{self.final_config_dict['neg_sampling']}] should be None "
                         f"when the loss_type is CE."
-                    ) # Why?
-                self.final_config_dict["MODEL_INPUT_TYPE"] = InputType.POINTWISE # POINTWISE: uid, iid, label
+                    )  # Why?
+                self.final_config_dict["MODEL_INPUT_TYPE"] = (
+                    InputType.POINTWISE
+                )  # POINTWISE: uid, iid, label
             elif self.final_config_dict["loss_type"] in ["BPR"]:
-                self.final_config_dict["MODEL_INPUT_TYPE"] = InputType.PAIRWISE # PAIRWISE: uid, pos_iid, neg_iid
+                self.final_config_dict["MODEL_INPUT_TYPE"] = (
+                    InputType.PAIRWISE
+                )  # PAIRWISE: uid, pos_iid, neg_iid
         else:
             raise ValueError(
                 "Either Model has attr 'input_type',"
                 "or arg 'loss_type' should exist in config."
             )
 
-        metrics = self.final_config_dict["metrics"] # In, MISSRec, the metrics are from the external config file
-        if isinstance(metrics, str): # Convert to list
+        metrics = self.final_config_dict[
+            "metrics"
+        ]  # In, MISSRec, the metrics are from the external config file
+        if isinstance(metrics, str):  # Convert to list
             self.final_config_dict["metrics"] = [metrics]
 
         eval_type = set()
@@ -433,6 +443,7 @@ class Config(object):
 
         # eval_args checking
         # These args were set for SequentialRecommender in the internal yaml file.
+        self.final_config_dict["eval_args"]["mode"] = "labeled"
         default_eval_args = {
             "split": {"RS": [0.8, 0.1, 0.1]},
             "order": "RO",
