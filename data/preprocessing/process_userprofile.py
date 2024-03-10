@@ -211,7 +211,7 @@ def convert_to_atomic_files(
     inter_list = list()
     # generate the list
     for uid in uid_list:
-        for i in range(1, len(train_data[uid]) + 1):
+        for i in range(1, min(len(train_data[uid]) + 1, 33)):
             tmp_list = list()
             tmp_list.append(uid)
             for j in range(0, i):
