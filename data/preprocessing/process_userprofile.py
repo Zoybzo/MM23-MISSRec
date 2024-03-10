@@ -111,11 +111,15 @@ def convert_inters2dict(inters, userprofile):
         user2items[user2index[user]].append(item2index[item])
         userprofile[user2index[user]] = userprofile[user]
     # write user2index
-    with open(os.path.join(args.output_path, f"{args.dataset}.user2index"), "w") as file:
+    with open(
+        os.path.join(args.output_path, f"{args.dataset}.user2index"), "w"
+    ) as file:
         for key, value in user2index.items():
             file.write(f"{key}\t{value}\n")
     # write item2index
-    with open(os.path.join(args.output_path, f"{args.dataset}.item2index"), "w") as file:
+    with open(
+        os.path.join(args.output_path, f"{args.dataset}.item2index"), "w"
+    ) as file:
         for key, value in item2index.items():
             file.write(f"{key}\t{value}\n")
     return userprofile, user2items, user2index, item2index
@@ -203,7 +207,7 @@ def convert_to_atomic_files(
     print(" Dataset: ", args.dataset)
     uid_list = list(train_data.keys())
     # shuffle the uid list
-    random.shuffle(uid_list)
+    # random.shuffle(uid_list)
     inter_list = list()
     # generate the list
     for uid in uid_list:
@@ -215,6 +219,8 @@ def convert_to_atomic_files(
             # add userprofile data
             tmp_list.extend(userprofile[uid])
             inter_list.append(tmp_list)
+    # sort inter_list by uid, and gender
+    inter_list = sorted(inter_list, key=lambda x: (x[0], x[-2]))
     train_len = int(len(inter_list) * train_radio)
     valid_len = int(len(inter_list) * valid_radio)
     test_len = len(inter_list) - train_len - valid_len
